@@ -15,14 +15,14 @@ public class KafkaConnector {
     public KafkaConnector() {}
 
 
-    public JavaPairDStream<String, String>  getStream(JavaStreamingContext ssc)
+    public JavaPairDStream<String, String>  getStream(JavaStreamingContext ssc, String topic)
     {
         Map<String,String>  kafkaParams = new HashMap<String, String>();
         kafkaParams.put("metadata.broker.list", "172.29.65.180:9092,172.29.65.181:9092," +
                 "172.29.65.182:9092,172.29.65.183:9092,172.29.65.184:9092,172.29.65.185:9092," +
                 "172.29.65.186:9092,172.29.65.187:9092,172.29.65.188:9092,172.29.65.189:9092");
         Set<String> topics = new HashSet<String>();
-        topics.add("AdServe");
+        topics.add(topic);
         return KafkaUtils.createDirectStream(ssc, String.class, String.class,
                 StringDecoder.class, StringDecoder.class ,kafkaParams,topics);
     }

@@ -47,6 +47,8 @@ public class Main {
             Adlog adlog = mapper.readValue(x._2(),Adlog.class);
             return new Tuple2<String, Adlog>(x._1(),adlog);
         });
+	javaPairDStream.print();
+	conversionDStream.print();
         JavaPairDStream<String, Integer> impStream = adlogJavaPairDStream.filter(x->(x._2().getAdLogType() ==1)).mapToPair(x->new Tuple2<String,Integer>(x._1(),1));
         JavaPairDStream<String, Integer> clickStream = adlogJavaPairDStream.filter(x->(x._2().getAdLogType() ==2)).mapToPair(x->new Tuple2<String,Integer>(x._1(),1));
         JavaPairDStream<String, Integer> trackerStream = conversionDStream.mapToPair(x->new Tuple2<String,Integer>(x._1(),2));
@@ -68,6 +70,11 @@ public class Main {
                         if (current == 2 && state.get()==2)
                                 result  =2;
                     }
+		    else
+		    {
+                     	result = current;
+		    }
+		    if (result ==3) System.out.println("HERE" + word);
                     Tuple2<String, Integer> output = new Tuple2<>(word, result);
                     if (!state.isTimingOut()) state.update(result);
                     return output;

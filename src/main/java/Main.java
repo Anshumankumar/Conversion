@@ -19,8 +19,9 @@ import scala.Tuple2;
 public class Main {
     public static void main(String [] args)
     {
-        SparkConf conf = new SparkConf().setAppName("Conversion").setMaster("local[4]");
-        JavaStreamingContext ssc = new JavaStreamingContext(conf, new Duration(1000));
+        SparkConf conf = new SparkConf().setAppName("Conversion");
+        JavaStreamingContext ssc = new JavaStreamingContext(conf, new Duration(5*60000));
+	ssc.checkpoint("hdfs://172.29.65.171:8020/user/Conversion");
         KafkaConnector kafkaConnector = new KafkaConnector();
         JavaPairDStream<String,String> javaPairDStream =  kafkaConnector.getStream(ssc);
         JavaPairDStream<String, Integer> impressionPD = javaPairDStream.mapToPair(x-> new Tuple2<String, Integer>(x._1(),1));
@@ -29,11 +30,11 @@ public class Main {
                 (word, one, state) -> {
                     int sum = one.orElse(0) + (state.exists() ? state.get() : 0);
                     Tuple2<String, Integer> output = new Tuple2<>(word, sum);
-                    state.update(sum);
+                    if (!state.isTimingOut()) state.update(sum);
                     return output;
                 };
         JavaMapWithStateDStream<String, Integer, Integer, Tuple2<String, Integer>> stateDstream =
-        impressionPD.mapWithState(StateSpec.function(mappingFunc));
+        impressionPD.mapWithState(StateSpec.function(mappingFunc).timeout(new Duration(60000*60*6)));
         stateDstream.print();
         ssc.start();
         try {

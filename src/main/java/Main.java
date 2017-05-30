@@ -87,50 +87,42 @@ public class Main {
         javaPairDStream.print();
 	    conversionDStream.print();
 	    adlogJavaPairDStream.filter(x->(x._2().getAdLogType()==2)).print();
-        JavaPairDStream<String, Integer> impStream = adlogJavaPairDStream.filter(x->(x._2().getAdLogType() ==1)).mapToPair(x->new Tuple2<String,Integer>(x._1(),1));
-        JavaPairDStream<String, Integer> clickStream = adlogJavaPairDStream.filter(x->(x._2().getAdLogType() ==2)).mapToPair(x->new Tuple2<String,Integer>(x._1(),1));
-        JavaPairDStream<String, Integer> trackerStream = conversionDStream.mapToPair(x->new Tuple2<String,Integer>(x._1(),2));
+        JavaPairDStream<String, String> impStream = adlogJavaPairDStream.filter(x->(x._2().getAdLogType() ==1)).mapToPair(x->new Tuple2<String,String>(x._1(),x._2().getAdImprLog().getImprId()));
+        JavaPairDStream<String, String> clickStream = adlogJavaPairDStream.filter(x->(x._2().getAdLogType() ==2)).mapToPair(x->new Tuple2<String,String>(x._1(),x._2().getAdClickLog().getImprId()));
+        JavaPairDStream<String, String> trackerStream = conversionDStream.mapToPair(x->new Tuple2<String,String>(x._1(), "tracker"));
         impStream = impStream.union(trackerStream);
         clickStream = clickStream.union(trackerStream);
 
         ConversionKafkaProducer conversionKafkaProducer = new ConversionKafkaProducer();
 
-        Function3<String, Optional<Integer>, State<Integer>, Tuple2<String, Integer>> mappingFunc =
-                (word, one, state) -> {
-                    Integer current = one.orElse(0);
-                    int result = 0;
-                    if (state.exists() )
+        Function3<String, Optional<String>, State<String>, Tuple2<String, String>> mappingFunc =
+                (key, current, state) -> {
+                    String currentState =  current.orElse(null);
+                    Tuple2<String, String> output = null;
+                    if (currentState.equals("tracker"))
                     {
-                        if (current == 2 && state.get()==1)
-                                result  =3;
-                        if (current == 1 && state.get()==2)
-                                result  =3;
-                        if (current == 1 && state.get()==1)
-                                result  =1;
-                        if (current == 2 && state.get()==2)
-                                result  =2;
+                        if (state.exists())
+                        {
+                            conversionKafkaProducer.send(key, state.get());
+                        }
                     }
-		    else
-		    {
-                     	result = current;
-		    }
-		    if (result ==3)
-            {
-                System.out.println("HERE" + word);
-                conversionKafkaProducer.send(word, "Hello");
-            }
-                    Tuple2<String, Integer> output = new Tuple2<>(word, result);
-                    if (!state.isTimingOut()) state.update(result);
+                    else
+                    {
+                        if (!state.isTimingOut())
+                        {
+                             output = new Tuple2<>(key, currentState);
+                             state.update(currentState);
+                        }
+                    }
                     return output;
                 };
-        JavaMapWithStateDStream<String, Integer, Integer, Tuple2<String, Integer>> stateDstream =
+
+        JavaMapWithStateDStream<String, String, String, Tuple2<String, String>> stateDstream =
             impStream.mapWithState(StateSpec.function(mappingFunc).timeout(new Duration(60000*60*24*2)));
-        JavaMapWithStateDStream<String, Integer, Integer, Tuple2<String, Integer>> clickStateDstream =
+        JavaMapWithStateDStream<String, String, String, Tuple2<String, String>> clickStateDstream =
                 clickStream.mapWithState(StateSpec.function(mappingFunc).timeout(new Duration(60000*60*24*30)));
         stateDstream.print(2);
         clickStateDstream.print(2);
-        JavaPairDStream<String,Integer> finalStream = stateDstream.stateSnapshots().filter(x-> (x._2()==3));
-        finalStream.print(2);
         ssc.start();
         try {
             ssc.awaitTermination();

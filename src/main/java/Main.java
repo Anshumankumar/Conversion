@@ -18,9 +18,22 @@ import scala.Tuple2;
  */
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-class Adlog implements  java.io.Serializable
-{
+class Impression implements java.io.Serializable {
+    private String imprId;
+
+    public String getImprId() {
+        return imprId;
+    }
+
+    public void setImprId(String imprId) {
+        this.imprId = imprId;
+    }
+}
+@JsonIgnoreProperties(ignoreUnknown = true)
+class Adlog implements  java.io.Serializable {
     private int adLogType;
+    private Impression adImprLog;
+    private Impression adClickLog;
 
     public int getAdLogType() {
         return adLogType;
@@ -29,14 +42,38 @@ class Adlog implements  java.io.Serializable
     public void setAdLogType(int adLogType) {
         this.adLogType = adLogType;
     }
+
+    public Impression getAdImprLog() {
+        return adImprLog;
+    }
+
+    public void setAdImprLog(Impression adImprLog) {
+        this.adImprLog = adImprLog;
+    }
+
+    public Impression getAdClickLog() {
+        return adClickLog;
+    }
+
+    public void setAdClickLog(Impression adClickLog) {
+        this.adClickLog = adClickLog;
+    }
+
+    public String toString() {
+        if (adLogType == 1)
+            return getAdLogType() + ":" +getAdImprLog().getImprId();
+        if (adLogType == 2)
+            return getAdLogType() + ":" +getAdClickLog().getImprId();
+        return null;
+    }
 }
 
 public class Main {
     public static void main(String [] args)
     {
-        SparkConf conf = new SparkConf().setAppName("ConversionA").setMaster(args[0]);
-        JavaStreamingContext ssc = new JavaStreamingContext(conf, new Duration(1000));
-	    ssc.checkpoint("hdfs://172.29.65.171:8020/user/Conversion");
+        SparkConf conf = new SparkConf().setAppName("Conversion").setMaster(args[0]);
+        JavaStreamingContext ssc = new JavaStreamingContext(conf, new Duration(60000));
+        ssc.checkpoint("hdfs://172.29.65.171:8020/user/Conversion");
         KafkaConnector kafkaConnector = new KafkaConnector();
         JavaPairDStream<String,String> javaPairDStream =  kafkaConnector.getStream(ssc,"AdServe");
         JavaPairDStream<String,String> conversionDStream =  kafkaConnector.getStream(ssc,"AdTracker");
@@ -47,13 +84,16 @@ public class Main {
             Adlog adlog = mapper.readValue(x._2(),Adlog.class);
             return new Tuple2<String, Adlog>(x._1(),adlog);
         });
-	javaPairDStream.print();
-	conversionDStream.print();
+        javaPairDStream.print();
+	    conversionDStream.print();
+	    adlogJavaPairDStream.filter(x->(x._2().getAdLogType()==2)).print();
         JavaPairDStream<String, Integer> impStream = adlogJavaPairDStream.filter(x->(x._2().getAdLogType() ==1)).mapToPair(x->new Tuple2<String,Integer>(x._1(),1));
         JavaPairDStream<String, Integer> clickStream = adlogJavaPairDStream.filter(x->(x._2().getAdLogType() ==2)).mapToPair(x->new Tuple2<String,Integer>(x._1(),1));
         JavaPairDStream<String, Integer> trackerStream = conversionDStream.mapToPair(x->new Tuple2<String,Integer>(x._1(),2));
         impStream = impStream.union(trackerStream);
         clickStream = clickStream.union(trackerStream);
+
+        ConversionKafkaProducer conversionKafkaProducer = new ConversionKafkaProducer();
 
         Function3<String, Optional<Integer>, State<Integer>, Tuple2<String, Integer>> mappingFunc =
                 (word, one, state) -> {
@@ -74,7 +114,11 @@ public class Main {
 		    {
                      	result = current;
 		    }
-		    if (result ==3) System.out.println("HERE" + word);
+		    if (result ==3)
+            {
+                System.out.println("HERE" + word);
+                conversionKafkaProducer.send(word, "Hello");
+            }
                     Tuple2<String, Integer> output = new Tuple2<>(word, result);
                     if (!state.isTimingOut()) state.update(result);
                     return output;
@@ -93,6 +137,5 @@ public class Main {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        System.out.println("Hello Conversion");
     }
 }

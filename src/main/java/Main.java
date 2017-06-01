@@ -98,8 +98,10 @@ public class Main {
         Function3<String, Optional<String>, State<String>, Tuple2<String, String>> mappingFunc =
                 (key, current, state) -> {
                     String currentState =  current.orElse(null);
-                    Tuple2<String, String> output = null;
-                    if (currentState.equals("tracker"))
+		    Tuple2<String, String> output = null;
+                    if (currentState ==null) return null;
+                  
+		    if (currentState.equals("tracker"))
                     {
                         if (state.exists())
                         {
